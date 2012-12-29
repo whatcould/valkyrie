@@ -8,21 +8,23 @@ class Valkyrie::CLI
     url2 = args.shift
 
     unless url1 && url2
-      puts "valkyrie FROM TO"
+      puts "valkyrie FROM TO [encoding]"
       exit 1
     end
 
-    db1 = Valkyrie::Database.new(url1)
+    encoding_to_force = args.shift
+
+    db1 = Valkyrie::Database.new(url1, encoding_to_force)
     db2 = Valkyrie::Database.new(url2)
 
     progress = nil
 
     db1.transfer_to(db2) do |type, data|
       case type
-        when :tables      then puts "Transferring #{data} tables:"
-        when :table       then progress = Valkyrie::ProgressBar.new(data.first, data.last, $stdout)
-        when :row         then progress.inc(data)
-        when :end         then progress.finish
+        when :tables then puts "Transferring #{data} tables:"
+        when :table  then progress = Valkyrie::ProgressBar.new(data.first, data.last, $stdout)
+        when :row    then progress.inc(data)
+        when :end    then progress.finish
       end
     end
   rescue Interrupt

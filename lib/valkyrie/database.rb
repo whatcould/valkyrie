@@ -8,30 +8,22 @@ class Valkyrie::Database
 
   attr_reader :connection
 
-  def initialize(uri)
+  def initialize(uri, encoding_to_force = nil)
     @connection = Sequel.connect(uri)
+    @encoding_to_force = encoding_to_force
     Sequel::MySQL.convert_invalid_date_time = nil if @connection.adapter_scheme == :mysql
   end
 
   def transfer_to(db, &cb)
     cb.call(:tables, tables.length)
     tables.each do |name|
-      if db.connection.table_exists?(name)
-        puts "Table #{name} already exists, unable to proceed with migration."
-        puts "\t- migration must be run against a fresh database"
-        exit
-      end
       cb.call(:table, [name, connection[name].count])
       transfer_table(name, db, &cb)
-    end
-    puts "Migrating constraings:"
-    tables.each do |name|
-      puts "#{name}"
-      db.connection.write_extra_ddl(name, connection.read_extra_ddl(name))
     end
   end
 
   def transfer_table(name, db, &cb)
+    db.connection.drop_table(name) if db.connection.table_exists?(name)
     db.connection.hash_to_schema(name, connection.schema_to_hash(name), &cb)
 
     columns = connection.schema(name).map(&:first)
@@ -57,14 +49,20 @@ class Valkyrie::Database
     send_rows(db, name, columns, buffer) if buffer.length > 0
     cb.call(:end)
 
-    connection.not_transferred(name)
-
     columns
   end
 
   def send_rows(db, name, columns, rows)
-    data = rows.map { |row| columns.map { |c| row[c] } }
+    data = rows.map { |row| columns.map { |c| cleanup_strings(row[c]) } }
     db.connection[name].insert_multiple data
+  end
+
+  def cleanup_strings(column_data)
+    if @encoding_to_force && column_data.is_a?(String)
+      column_data.encode(@encoding_to_force, {:invalid => :replace, :undef => :replace})
+    else
+      column_data
+    end
   end
 
   def tables
